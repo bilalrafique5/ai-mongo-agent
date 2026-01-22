@@ -33,6 +33,7 @@ MongoDB filter:
         contents=[types.Part.from_text(text=prompt)]
     )
 
+
     # Clean the AI response to remove ```json or ``` markers
     text = response.text.strip()
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE)

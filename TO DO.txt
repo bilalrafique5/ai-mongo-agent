@@ -1,0 +1,8 @@
+   The next is that:
+1) tell agent about collection of Database.
+2) then ask the schema of that collection.
+3) and then create query about it.
+
+
+
+
