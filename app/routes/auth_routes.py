@@ -1,56 +1,63 @@
-# app/routes/auth_routes.py
 from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from datetime import datetime, timedelta
+from jose import jwt, JWTError
+
 from app.schemas.auth_schema import UserCreate, UserLogin, TokenResponse
 from app.crud.user_crud import create_user, get_user_by_username, verify_password
 from app.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
-from datetime import datetime, timedelta
-from jose import JWTError, jwt
-from fastapi.security import OAuth2PasswordBearer
 
-router = APIRouter(prefix="/auth")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+router = APIRouter(prefix="/auth", tags=["AUTH"])
 
-# --- JWT Token ---
-def create_access_token(data: dict, expires_delta: timedelta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)):
+security=HTTPBearer()
+
+# ---- JWT creator ----
+def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return token
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-# --- Current user dependency ---
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid token",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+# ---- Dependency (Protected) ----
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        user = await get_user_by_username(username)
-        if user is None:
-            raise credentials_exception
-        return user
-    except JWTError:
-        raise credentials_exception
+        username = payload.get("sub")
 
-# --- Register ---
-@router.post("/register", tags=["AUTH"])
+        if not username:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        user = await get_user_by_username(username)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+
+        return user
+
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token invalid or expired",
+        )
+
+# ---- Register (OPEN) ----
+@router.post("/register")
 async def register(user: UserCreate):
-    existing_user = await get_user_by_username(user.username)
-    if existing_user:
+    if await get_user_by_username(user.username):
         raise HTTPException(status_code=400, detail="Username already exists")
     user_id = await create_user(user.dict())
-    return {"id": user_id}
+    return {"user created with id": user_id}
 
-# --- Login ---
-@router.post("/login", response_model=TokenResponse, tags=["AUTH"])
+# ---- Login (OPEN) ----
+@router.post("/login", response_model=TokenResponse)
 async def login(user: UserLogin):
     db_user = await get_user_by_username(user.username)
+
     if not db_user or not verify_password(user.password, db_user["password"]):
-        raise HTTPException(status_code=401, detail="Incorrect username or password")
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
     token = create_access_token({"sub": user.username})
     return {"access_token": token, "token_type": "bearer"}
