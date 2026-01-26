@@ -2,59 +2,49 @@
 from fastapi import APIRouter, HTTPException
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.agents.query_agent import ai_query_agent
+from app.utils.schema_utils import get_all_collection_schemas
 from app.config import MONGO_URI, DATABASE_NAME
+from google.genai.errors import ClientError
 
 router = APIRouter(prefix="/AI", tags=["AI"])
 
-# MongoDB client
 client = AsyncIOMotorClient(MONGO_URI)
 db = client[DATABASE_NAME]
 
-@router.post("/query_person")
+@router.post("/query")
 async def ai_query(user_query: str):
-    
-    # Step 1: Ask AI for structured JSON instruction
+
+    schemas = await get_all_collection_schemas(db)
+
     try:
-        instr = await ai_query_agent(user_query)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        instr = await ai_query_agent(user_query, schemas)
+    except ClientError:
+        raise HTTPException(500, "AI service failed")
 
-    # Step 2: If user wants collection list
+    # 1️⃣ List collections
     if instr.get("list_collections_request"):
-        collections = await db.list_collection_names()
-        return {"available_collections": collections}
+        return {"available_collections": list(schemas.keys())}
 
-    # Step 3: Ensure collection is specified
-    collection_name = instr.get("collection")
-    if not collection_name:
-        raise HTTPException(status_code=400, detail="Could not detect collection from query")
+    collection = instr.get("collection")
+    if not collection:
+        raise HTTPException(400, "AI could not determine collection")
 
-    # Check if collection exists
-    if collection_name not in await db.list_collection_names():
-        raise HTTPException(status_code=404, detail=f"Collection '{collection_name}' not found")
+    if collection not in schemas:
+        raise HTTPException(404, f"Collection '{collection}' not found")
 
-    # Step 4: If schema requested
+    # 2️⃣ Schema request
     if instr.get("schema_request"):
-        sample = await db[collection_name].find_one()
-        if not sample:
-            return {"collection": collection_name, "schema": "Empty collection"}
-        schema = {k: type(v).__name__ for k, v in sample.items()}
-        return {"collection": collection_name, "schema": schema}
+        return {
+            "collection": collection,
+            "schema": schemas[collection]
+        }
 
-    # Step 5: Otherwise fetch data using AI-generated filter
-    mongo_filter = instr.get("filter", {})
-    raw_data = await db[collection_name].find(mongo_filter).to_list(100)
-
-    # Convert ObjectId to string
-    data = []
-    for doc in raw_data:
-        doc["_id"] = str(doc["_id"])
-        data.append(doc)
+    # 3️⃣ Query data
+    mongo_filter = instr.get("filter") or {}
+    docs = await db[collection].find(mongo_filter).to_list(100)
 
     return {
-        "collection": collection_name,
-        "user_query": user_query,
-        "mongo_filter": mongo_filter,
-        "result": data
+        "collection": collection,
+        "filter": mongo_filter,
+        "result": [{**d, "_id": str(d["_id"])} for d in docs]
     }
-

@@ -12,7 +12,7 @@ router = APIRouter(prefix="/persons")
 
 @router.post("/create", tags=["CREATE"])
 async def add_person(person: PersonSchema, user: dict = Depends(get_current_user)):
-    return {"id": await create_person(person.dict())}
+    return {"user created with id": await create_person(person.dict())}
 
 @router.get("/", tags=["READ"])
 async def all_persons(user: dict = Depends(get_current_user)):
