@@ -162,6 +162,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=60
 
 ---
 
+<<<<<<< HEAD
 ## 📄 License
 
 This project is licensed under the MIT License.
@@ -175,3 +176,5 @@ If you want, I can next:
 - :contentReference[oaicite:1]{index=1}
 - Or :contentReference[oaicite:2]{index=2} 🚀
 ```
+=======
+>>>>>>> d45069abef7549271584b7da7022a136d367b983
