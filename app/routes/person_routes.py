@@ -6,6 +6,8 @@ from app.crud.person_crud import (
     get_person_by_name, get_persons_by_start_letter,
     delete_person_by_name
 )
+
+
 from app.routes.auth_routes import get_current_user
 
 router = APIRouter(prefix="/persons")
